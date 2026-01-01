@@ -3,7 +3,7 @@
 
 #BiocManager::install("Biostrings")
 
-#library("Biostrings")
+library(Biostrings)
 
 scoreDNA <- readDNAStringSet("seq_score.fasta")
 motifDNA <- readDNAStringSet("seq_motif.fasta")
@@ -35,6 +35,33 @@ Score <- function(start_idx, sequences, motif_length){
   return(score)
 }
 
+NextLeaf <- function(s, t, k){
+  for (i in seq(t, 1, by = -1)){
+    if (s[i] < k){
+      s[i] <- s[i] + 1
+      return(s)
+    }
+    s[i] <- 1
+  }
+  return(s)
+}
+
+BFMotifSearch <- function(DNA, t, n, l){
+  s <- rep(1, t)
+  bestScore <- Score(s, DNA, l)
+  while (TRUE){
+    s <- NextLeaf(s, t, n - l + 1)
+    tmp_score <- Score(s, DNA, l)
+    if (tmp_score > bestScore){
+      bestScore <- tmp_score
+      bestMotif <- s
+    }
+    if (all(s == rep(1, t))){
+      return(bestMotif)
+    }
+  }
+}
+
 ScoreModif <- function(start_idx, num_seq, sequences, motif_length){
   len_seq <- length(sequences[[1]])
   for (i in 1:num_seq){
@@ -62,74 +89,70 @@ ScoreModif <- function(start_idx, num_seq, sequences, motif_length){
   return(score)
 }
 
-NextLeaf <- function(s, t, k){
-  for (i in t:-1:1){
-    if (s[i] < k){
-      s[i] <- s[i] + 1
-      return(s)
-    }
-    s[i] <- 1
-  }
-  return(s)
-}
-
-BFMotifSearch <- function(DNA, t, n, l){
-  s <- rep(1, t)
-  bestScore <- Score(s, DNA, l)
-  while (TRUE){
-    s <- NextLeaf(s, t, n - l + 1)
-    tmp_score <- Score(s, DNA, l)
-    if (tmp_score > bestScore){
-      bestScore <- tmp_score
-      bestMotif <- s
-    }
-    if (all(s == rep(1, t))){
-      return(bestMotif)
-    }
-  }
-}
-
 NextVertex <- function(s, i, t, k){
   if (i < t){
     s[(i+1)] <- 1
-    return(s, i + 1)
+    return(c(s, i + 1))
   }else{
-    for (j in t:-1:1){
+    for (j in seq(t, 1, by = -1)){
       if (s[j] < k){
         s[j] <- s[j] + 1
-        return(s, j)
+        return(c(s, j))
       }
-    }
-  }
-  return(s, 0)
-}
-
-ByPass <- function(s, i, t, k){
-  for (j in i:-1:1){
-    if (s[j] < k){
-      s[j] <- s[j] + 1
-      return(s, j)
     }
   }
   return(c(s, 0))
 }
 
-BBMotifSearch(DNA, t, n, l){
-  s <-  rep(1, t)
-  bestScore <- 0
+ByPass <- function(s, i, t, k){
+  for (j in seq(i, 1, by = -1)){
+    if (s[j] < k){
+      s[j] <- s[j] + 1
+      return(c(s, j))
+    }
+  }
+  return(c(s, 0))
+}
+
+BBMotifSearch <- function(DNA, t, n, l){
+  # t ... počet sekvencí
+  # n ... délka sekvencí
+  # l ... délka motivu
+  
+  s <- rep(1, t)          # počáteční indexy
+  bestScore <- -Inf
+  bestS <- s
   i <- 1
+  
   while (i > 0){
     if (i < t){
       optimisticScore <- ScoreModif(s, i, DNA, l) + (t - i) * l
       if (optimisticScore < bestScore){
-        si <- ByPass(s, i, t, (n-l+1))
+        res <- ByPass(s, i, t, (n - l + 1))
+        s <- res[-length(res)]
+        i <- res[length(res)]
+      } else {
+        res <- NextVertex(s, i, t, (n - l + 1))
+        s <- res[-length(res)]
+        i <- res[length(res)]
       }
-      
+    } else {
+      # i == t, máme kompletní řešení
+      score <- ScoreModif(s, t, DNA, l)
+      if (score > bestScore){
+        bestScore <- score
+        bestS <- s
+      }
+      res <- NextVertex(s, i, t, (n - l + 1))
+      s <- res[-length(res)]
+      i <- res[length(res)]
     }
   }
+  return(bestS)
 }
 
 motif_length <- 6
 starting_indexes <- c(6, 4, 5, 3)
 align_matrix <- Score(starting_indexes, scoreDNA, motif_length)
 BFMotifSearch(motifDNA, length(motifDNA[,1]), length(motifDNA[[1]]), 3)
+BBMotifSearch(motifDNA, length(motifDNA), length(motifDNA[[1]]), 3)
